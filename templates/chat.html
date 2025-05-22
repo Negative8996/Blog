@@ -1,45 +1,69 @@
-
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Hack Chat</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <script>
-    async function loadMessages() {
-      const res = await fetch('/messages');
-      const messages = await res.json();
-      const chat = document.getElementById('chat');
-      chat.innerHTML = '';
-      messages.forEach(m => {
-        const p = document.createElement('p');
-        p.textContent = m.user + ' > ' + m.text;
-        chat.appendChild(p);
-      });
-    }
-
-    async function sendMessage() {
-      const text = document.getElementById('msg').value;
-      if (!text.trim()) return;
-      await fetch('/messages', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: 'text=' + encodeURIComponent(text)
-      });
-      document.getElementById('msg').value = '';
-      loadMessages();
-    }
-
-    setInterval(loadMessages, 1000);
-    window.onload = loadMessages;
-  </script>
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
   <div class="terminal">
     <h1>Bienvenue, {{ username }} | <a href="/logout">Déconnexion</a></h1>
     <div id="chat" class="chat-box"></div>
-    <input type="text" id="msg" placeholder="Tape ton message...">
+    <input
+      type="text"
+      id="msg"
+      placeholder="Tape ton message..."
+      autocomplete="off"
+    />
     <button onclick="sendMessage()">Envoyer</button>
   </div>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    const socket = io();
+
+    function sendMessage() {
+      const input = document.getElementById('msg');
+      const text = input.value.trim();
+      if (!text) return;
+      socket.emit('send_message', { text });
+      input.value = '';
+    }
+
+    socket.on('new_message', (data) => {
+      const chat = document.getElementById('chat');
+      const p = document.createElement('p');
+      p.textContent = data.user + ' > ' + data.text;
+      chat.appendChild(p);
+      chat.scrollTop = chat.scrollHeight;
+    });
+
+    async function loadOldMessages() {
+      try {
+        const res = await fetch('/messages');
+        const messages = await res.json();
+        const chat = document.getElementById('chat');
+        chat.innerHTML = '';
+        messages.forEach((m) => {
+          const p = document.createElement('p');
+          p.textContent = m.user + ' > ' + m.text;
+          chat.appendChild(p);
+        });
+        chat.scrollTop = chat.scrollHeight;
+      } catch (err) {
+        console.error('Erreur chargement messages', err);
+      }
+    }
+
+    window.onload = () => {
+      loadOldMessages();
+      const input = document.getElementById('msg');
+      input.focus();
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') sendMessage();
+      };
+    };
+  </script>
 </body>
 </html>
+

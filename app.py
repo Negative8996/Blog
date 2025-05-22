@@ -1,9 +1,11 @@
-
 from flask import Flask, render_template, request, redirect, session, jsonify
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_socketio import SocketIO, emit
 import json, os
 
 app = Flask(__name__)
 app.secret_key = 'hacker_secret'
+socketio = SocketIO(app)
 
 USERS_FILE = 'users.json'
 MESSAGES_FILE = 'messages.json'
@@ -30,7 +32,7 @@ def login():
     users = load_data(USERS_FILE)
     data = request.form
     for user in users:
-        if user['username'] == data['username'] and user['password'] == data['password']:
+        if user['username'] == data['username'] and check_password_hash(user['password'], data['password']):
             session['user'] = user['username']
             return redirect('/')
     return 'Identifiants invalides', 401
@@ -41,7 +43,8 @@ def register():
     data = request.form
     if any(u['username'] == data['username'] for u in users):
         return 'Utilisateur existe déjà', 400
-    users.append({'username': data['username'], 'password': data['password']})
+    hashed_password = generate_password_hash(data['password'])
+    users.append({'username': data['username'], 'password': hashed_password})
     save_data(USERS_FILE, users)
     return redirect('/')
 
@@ -50,21 +53,15 @@ def logout():
     session.pop('user', None)
     return redirect('/')
 
-@app.route('/messages')
-def get_messages():
-    messages = load_data(MESSAGES_FILE)
-    return jsonify(messages)
-
-@app.route('/messages', methods=['POST'])
-def post_message():
+@socketio.on('send_message')
+def handle_message(data):
     if 'user' not in session:
-        return 'Non autorisé', 403
+        return
     messages = load_data(MESSAGES_FILE)
-    messages.append({'user': session['user'], 'text': request.form['text']})
+    messages.append({'user': session['user'], 'text': data['text']})
     save_data(MESSAGES_FILE, messages)
-    return '', 204
+    emit('new_message', {'user': session['user'], 'text': data['text']}, broadcast=True)
 
 if __name__ == '__main__':
-import os
-port = int(os.environ.get("PORT", 5000))
-app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host="0.0.0.0", port=port)
