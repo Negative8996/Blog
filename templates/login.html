@@ -1,0 +1,24 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Login - Hack Chat</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="terminal">
+    <h1>💀 Hack Blog Login 💀</h1>
+    <form method="POST" action="/login">
+      <input type="text" name="username" placeholder="Nom d'utilisateur" required>
+      <input type="password" name="password" placeholder="Mot de passe" required>
+      <button type="submit">Se connecter</button>
+    </form>
+    <form method="POST" action="/register">
+      <input type="text" name="username" placeholder="Créer un nom d'utilisateur" required>
+      <input type="password" name="password" placeholder="Créer un mot de passe" required>
+      <button type="submit">S'inscrire</button>
+    </form>
+  </div>
+</body>
+</html>
