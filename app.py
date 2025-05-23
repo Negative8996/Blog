@@ -1,41 +1,36 @@
-from flask import Flask, render_template, request, redirect, session, jsonify
-from flask_sqlalchemy import SQLAlchemy
-from flask_socketio import SocketIO, emit
-from werkzeug.security import generate_password_hash, check_password_hash
 import os
+from flask import Flask, render_template, request, redirect, session
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = 'hacker_secret'
 
-# Render PostgreSQL URL
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+# Configuration base de données
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 db = SQLAlchemy(app)
-socketio = SocketIO(app)
 
-# Modèles
+# Modèle utilisateur
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
 
-class Message(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user = db.Column(db.String(80), nullable=False)
-    text = db.Column(db.String(500), nullable=False)
-
-# Crée les tables si elles n'existent pas
-with app.app_context():
-    db.create_all()
-
-# Routes
+# Home (chat si connecté, sinon redirection login)
 @app.route('/')
 def home():
     if 'user' in session:
         return render_template('chat.html', username=session['user'])
+    return redirect('/login')
+
+# Affiche login.html (formulaires login/register)
+@app.route('/login', methods=['GET'])
+@app.route('/register', methods=['GET'])
+def show_login():
     return render_template('login.html')
 
+# Traitement connexion
 @app.route('/login', methods=['POST'])
 def login():
     data = request.form
@@ -45,6 +40,7 @@ def login():
         return redirect('/')
     return 'Identifiants invalides', 401
 
+# Traitement inscription
 @app.route('/register', methods=['POST'])
 def register():
     data = request.form
@@ -56,28 +52,21 @@ def register():
     )
     db.session.add(new_user)
     db.session.commit()
+    session['user'] = new_user.username
     return redirect('/')
 
+# Déconnexion
 @app.route('/logout')
 def logout():
     session.pop('user', None)
-    return redirect('/')
+    return redirect('/login')
 
-@app.route('/messages')
-def get_messages():
-    messages = Message.query.order_by(Message.id.asc()).all()
-    return jsonify([{'user': m.user, 'text': m.text} for m in messages])
+# Initialisation BDD si nécessaire
+@app.before_first_request
+def create_tables():
+    db.create_all()
 
-@socketio.on('send_message')
-def handle_send_message(data):
-    if 'user' not in session:
-        return
-    msg = Message(user=session['user'], text=data['text'])
-    db.session.add(msg)
-    db.session.commit()
-    emit('new_message', {'user': msg.user, 'text': msg.text}, broadcast=True)
-
-# Lancer l'application
+# Lancement de l'app
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    socketio.run(app, host="0.0.0.0", port=port)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
