@@ -1,6 +1,7 @@
 flask
+flask_sqlalchemy
 flask-socketio
 eventlet
-flask_sqlalchemy
 psycopg2-binary
 werkzeug
+gunicorn
