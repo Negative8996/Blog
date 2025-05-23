@@ -1,27 +1,43 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>Hack Chat</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
   <div class="terminal">
     <h1>Bienvenue, {{ username }} | <a href="/logout">Déconnexion</a></h1>
     <div id="chat" class="chat-box"></div>
-    <input
-      type="text"
-      id="msg"
-      placeholder="Tape ton message..."
-      autocomplete="off"
-    />
+    <input type="text" id="msg" placeholder="Tape ton message..." onkeydown="if(event.key==='Enter') sendMessage()">
     <button onclick="sendMessage()">Envoyer</button>
   </div>
 
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script>
     const socket = io();
+    const chat = document.getElementById('chat');
 
+    // Charger les anciens messages (via HTTP)
+    async function loadMessages() {
+      const res = await fetch('/messages');
+      const messages = await res.json();
+      chat.innerHTML = '';
+      messages.forEach(msg => {
+        appendMessage(msg.user, msg.text);
+      });
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // Ajouter un message au chat
+    function appendMessage(user, text) {
+      const p = document.createElement('p');
+      p.textContent = `${user} > ${text}`;
+      chat.appendChild(p);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    // Envoyer un message
     function sendMessage() {
       const input = document.getElementById('msg');
       const text = input.value.trim();
@@ -30,40 +46,13 @@
       input.value = '';
     }
 
-    socket.on('new_message', (data) => {
-      const chat = document.getElementById('chat');
-      const p = document.createElement('p');
-      p.textContent = data.user + ' > ' + data.text;
-      chat.appendChild(p);
-      chat.scrollTop = chat.scrollHeight;
+    // Réception de nouveaux messages via WebSocket
+    socket.on('new_message', data => {
+      appendMessage(data.user, data.text);
     });
 
-    async function loadOldMessages() {
-      try {
-        const res = await fetch('/messages');
-        const messages = await res.json();
-        const chat = document.getElementById('chat');
-        chat.innerHTML = '';
-        messages.forEach((m) => {
-          const p = document.createElement('p');
-          p.textContent = m.user + ' > ' + m.text;
-          chat.appendChild(p);
-        });
-        chat.scrollTop = chat.scrollHeight;
-      } catch (err) {
-        console.error('Erreur chargement messages', err);
-      }
-    }
-
-    window.onload = () => {
-      loadOldMessages();
-      const input = document.getElementById('msg');
-      input.focus();
-      input.onkeydown = (e) => {
-        if (e.key === 'Enter') sendMessage();
-      };
-    };
+    // Initialisation
+    window.onload = loadMessages;
   </script>
 </body>
 </html>
-

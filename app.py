@@ -1,26 +1,35 @@
 from flask import Flask, render_template, request, redirect, session, jsonify
-from werkzeug.security import generate_password_hash, check_password_hash
+from flask_sqlalchemy import SQLAlchemy
 from flask_socketio import SocketIO, emit
-import json, os
+from werkzeug.security import generate_password_hash, check_password_hash
+import os
 
 app = Flask(__name__)
 app.secret_key = 'hacker_secret'
+
+# Render PostgreSQL URL
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db = SQLAlchemy(app)
 socketio = SocketIO(app)
 
-USERS_FILE = 'users.json'
-MESSAGES_FILE = 'messages.json'
+# Modèles
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
 
-def load_data(file):
-    if not os.path.exists(file):
-        with open(file, 'w') as f:
-            json.dump([], f)
-    with open(file, 'r') as f:
-        return json.load(f)
+class Message(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user = db.Column(db.String(80), nullable=False)
+    text = db.Column(db.String(500), nullable=False)
 
-def save_data(file, data):
-    with open(file, 'w') as f:
-        json.dump(data, f)
+# Crée les tables si elles n'existent pas
+with app.app_context():
+    db.create_all()
 
+# Routes
 @app.route('/')
 def home():
     if 'user' in session:
@@ -29,23 +38,24 @@ def home():
 
 @app.route('/login', methods=['POST'])
 def login():
-    users = load_data(USERS_FILE)
     data = request.form
-    for user in users:
-        if user['username'] == data['username'] and check_password_hash(user['password'], data['password']):
-            session['user'] = user['username']
-            return redirect('/')
+    user = User.query.filter_by(username=data['username']).first()
+    if user and check_password_hash(user.password_hash, data['password']):
+        session['user'] = user.username
+        return redirect('/')
     return 'Identifiants invalides', 401
 
 @app.route('/register', methods=['POST'])
 def register():
-    users = load_data(USERS_FILE)
     data = request.form
-    if any(u['username'] == data['username'] for u in users):
+    if User.query.filter_by(username=data['username']).first():
         return 'Utilisateur existe déjà', 400
-    hashed_password = generate_password_hash(data['password'])
-    users.append({'username': data['username'], 'password': hashed_password})
-    save_data(USERS_FILE, users)
+    new_user = User(
+        username=data['username'],
+        password_hash=generate_password_hash(data['password'])
+    )
+    db.session.add(new_user)
+    db.session.commit()
     return redirect('/')
 
 @app.route('/logout')
@@ -53,15 +63,21 @@ def logout():
     session.pop('user', None)
     return redirect('/')
 
+@app.route('/messages')
+def get_messages():
+    messages = Message.query.order_by(Message.id.asc()).all()
+    return jsonify([{'user': m.user, 'text': m.text} for m in messages])
+
 @socketio.on('send_message')
-def handle_message(data):
+def handle_send_message(data):
     if 'user' not in session:
         return
-    messages = load_data(MESSAGES_FILE)
-    messages.append({'user': session['user'], 'text': data['text']})
-    save_data(MESSAGES_FILE, messages)
-    emit('new_message', {'user': session['user'], 'text': data['text']}, broadcast=True)
+    msg = Message(user=session['user'], text=data['text'])
+    db.session.add(msg)
+    db.session.commit()
+    emit('new_message', {'user': msg.user, 'text': msg.text}, broadcast=True)
 
+# Lancer l'application
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     socketio.run(app, host="0.0.0.0", port=port)

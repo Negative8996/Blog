@@ -1,4 +1,6 @@
-Flask
-Flask-SocketIO
+flask
+flask-socketio
 eventlet
+flask_sqlalchemy
+psycopg2-binary
 werkzeug
