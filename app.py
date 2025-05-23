@@ -1,36 +1,43 @@
 import os
 from flask import Flask, render_template, request, redirect, session
 from flask_sqlalchemy import SQLAlchemy
+from flask_socketio import SocketIO, emit
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = 'hacker_secret'
+app.secret_key = 'super_secret_key'
 
-# Configuration base de données
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chat.db'
+# Config BDD
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///chat.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Modèle utilisateur
+# SocketIO
+socketio = SocketIO(app)
+
+# Modèles
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
 
-# Home (chat si connecté, sinon redirection login)
+class Message(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80))
+    text = db.Column(db.Text)
+
+# Routes
 @app.route('/')
 def home():
     if 'user' in session:
         return render_template('chat.html', username=session['user'])
     return redirect('/login')
 
-# Affiche login.html (formulaires login/register)
 @app.route('/login', methods=['GET'])
 @app.route('/register', methods=['GET'])
 def show_login():
     return render_template('login.html')
 
-# Traitement connexion
 @app.route('/login', methods=['POST'])
 def login():
     data = request.form
@@ -40,7 +47,6 @@ def login():
         return redirect('/')
     return 'Identifiants invalides', 401
 
-# Traitement inscription
 @app.route('/register', methods=['POST'])
 def register():
     data = request.form
@@ -55,18 +61,36 @@ def register():
     session['user'] = new_user.username
     return redirect('/')
 
-# Déconnexion
 @app.route('/logout')
 def logout():
     session.pop('user', None)
     return redirect('/login')
 
-# Initialisation BDD si nécessaire
-@app.before_first_request
-def create_tables():
-    db.create_all()
+# SocketIO : envoi/recevoir messages
+@socketio.on('send_message')
+def handle_message(data):
+    if 'user' not in session:
+        return
+    msg = Message(username=session['user'], text=data['text'])
+    db.session.add(msg)
+    db.session.commit()
+    emit('receive_message', {'user': msg.username, 'text': msg.text}, broadcast=True)
 
-# Lancement de l'app
+# SocketIO : envoie tous les anciens messages
+@socketio.on('load_messages')
+def load_messages():
+    messages = Message.query.order_by(Message.id.asc()).all()
+    for msg in messages:
+        emit('receive_message', {'user': msg.username, 'text': msg.text})
+
+# Init BDD
+@app.before_request
+def init_db_once():
+    if not hasattr(app, 'tables_created'):
+        db.create_all()
+        app.tables_created = True
+
+# Run
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    socketio.run(app, host='0.0.0.0', port=port)
