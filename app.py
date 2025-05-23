@@ -26,11 +26,6 @@ class Message(db.Model):
     username = db.Column(db.String(80))
     text = db.Column(db.Text)
 
-# Création des tables au premier lancement
-@app.before_first_request
-def create_tables():
-    db.create_all()
-
 # Routes
 @app.route('/')
 def home():
@@ -71,7 +66,7 @@ def logout():
     session.pop('user', None)
     return redirect('/login')
 
-# SocketIO : gestion messages
+# SocketIO : envoi/recevoir messages
 @socketio.on('send_message')
 def handle_message(data):
     if 'user' not in session:
@@ -81,12 +76,20 @@ def handle_message(data):
     db.session.commit()
     emit('receive_message', {'user': msg.username, 'text': msg.text}, broadcast=True)
 
+# SocketIO : envoie tous les anciens messages
 @socketio.on('load_messages')
 def load_messages():
     messages = Message.query.order_by(Message.id.asc()).all()
     for msg in messages:
         emit('receive_message', {'user': msg.username, 'text': msg.text})
 
+# Fonction d'initialisation base de données
+def init_db():
+    with app.app_context():
+        db.create_all()
+
+# Run
 if __name__ == '__main__':
+    init_db()
     port = int(os.environ.get('PORT', 5000))
     socketio.run(app, host='0.0.0.0', port=port)
